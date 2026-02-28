@@ -27,7 +27,7 @@ export default function LoginPage() {
         className="bg-white p-8 rounded-xl shadow-lg w-96"
       >
         <h2 className="text-2xl font-bold mb-6 text-center">
-          FinanceHub Login
+           Axienta Group Finance Login
         </h2>
 
         <input
