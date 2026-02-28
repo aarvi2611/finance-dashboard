@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useEffect } from "react"
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,14 +33,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Plus, Pencil, Trash2, Search } from "lucide-react"
-import {
-  getClients,
-  addClient,
-  updateClient,
-  deleteClient,
-  type Client,
-} from "@/lib/data"
 import { toast } from "sonner"
+
+type Client = {
+  id: string
+  name: string
+  email: string
+  phone: string
+  company: string
+  address: string
+  createdAt: number
+}
 
 type FormData = Omit<Client, "id" | "createdAt">
 
@@ -51,14 +56,25 @@ const emptyForm: FormData = {
 }
 
 export function ClientsTable() {
-  const [clients, setClients] = useState(getClients)
+  const [clients, setClients] = useState<Client[]>([])
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormData>(emptyForm)
 
-  const refresh = useCallback(() => setClients(getClients()), [])
+  async function fetchClients() {
+    const snapshot = await getDocs(collection(db, "clients"))
+    const list = snapshot.docs.map((docSnap) => ({
+      id: docSnap.id,
+      ...(docSnap.data() as Omit<Client, "id">),
+    }))
+    setClients(list)
+  }
+
+  useEffect(() => {
+    fetchClients()
+  }, [])
 
   const filtered = clients.filter(
     (c) =>
@@ -85,28 +101,33 @@ export function ClientsTable() {
     setDialogOpen(true)
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.name.trim() || !form.email.trim()) {
       toast.error("Name and email are required.")
       return
     }
+
     if (editingId) {
-      updateClient(editingId, form)
+      await updateDoc(doc(db, "clients", editingId), form)
       toast.success("Client updated successfully.")
     } else {
-      addClient(form)
+      await addDoc(collection(db, "clients"), {
+        ...form,
+        createdAt: Date.now(),
+      })
       toast.success("Client created successfully.")
     }
-    refresh()
+
     setDialogOpen(false)
+    fetchClients()
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!deleteId) return
-    deleteClient(deleteId)
-    refresh()
+    await deleteDoc(doc(db, "clients", deleteId))
     setDeleteId(null)
     toast.success("Client deleted.")
+    fetchClients()
   }
 
   function updateField(field: keyof FormData, value: string) {
@@ -131,64 +152,47 @@ export function ClientsTable() {
         </Button>
       </div>
 
-      <div className="mt-4 rounded-lg border border-border bg-card">
+      <div className="mt-4 rounded-lg border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead className="hidden md:table-cell">Email</TableHead>
-              <TableHead className="hidden lg:table-cell">Phone</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Company</TableHead>
-              <TableHead className="hidden xl:table-cell">Added</TableHead>
-              <TableHead className="w-24 text-right">Actions</TableHead>
+              <TableHead>Added</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   No clients found.
                 </TableCell>
               </TableRow>
             ) : (
               filtered.map((client) => (
                 <TableRow key={client.id}>
-                  <TableCell className="font-medium text-foreground">{client.name}</TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {client.email}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell text-muted-foreground">
-                    {client.phone}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{client.company}</TableCell>
-                  <TableCell className="hidden xl:table-cell text-muted-foreground">
-                    {new Date(client.createdAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                  <TableCell>{client.name}</TableCell>
+                  <TableCell>{client.email}</TableCell>
+                  <TableCell>{client.phone}</TableCell>
+                  <TableCell>{client.company}</TableCell>
+                  <TableCell>
+                    {new Date(client.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        onClick={() => openEdit(client)}
-                        aria-label={`Edit ${client.name}`}
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 text-destructive hover:text-destructive"
-                        onClick={() => setDeleteId(client.id)}
-                        aria-label={`Delete ${client.name}`}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(client)}>
+                      <Pencil className="size-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive"
+                      onClick={() => setDeleteId(client.id)}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -197,38 +201,28 @@ export function ClientsTable() {
         </Table>
       </div>
 
-      {/* Create / Edit Dialog */}
+      {/* Dialog & Delete remain same structure */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Client" : "New Client"}</DialogTitle>
             <DialogDescription>
-              {editingId
-                ? "Update the client details below."
-                : "Fill in the details to create a new client."}
+              Fill in client details.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            {(
-              [
-                ["name", "Full Name"],
-                ["email", "Email"],
-                ["phone", "Phone"],
-                ["company", "Company"],
-                ["address", "Address"],
-              ] as [keyof FormData, string][]
-            ).map(([key, label]) => (
-              <div key={key} className="grid gap-1.5">
-                <Label htmlFor={key}>{label}</Label>
+
+          <div className="grid gap-3">
+            {(["name","email","phone","company","address"] as (keyof FormData)[]).map((key) => (
+              <div key={key}>
+                <Label>{key}</Label>
                 <Input
-                  id={key}
                   value={form[key]}
                   onChange={(e) => updateField(key, e.target.value)}
-                  placeholder={label}
                 />
               </div>
             ))}
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
@@ -240,19 +234,19 @@ export function ClientsTable() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Client</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this client? This action cannot be
-              undone.
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete}>
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
